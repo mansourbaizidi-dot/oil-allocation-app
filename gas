@@ -1,0 +1,93 @@
+import streamlit as st
+
+# --- Configuration de la page ---
+st.set_page_config(page_title="Smart Well Allocation Manager", layout="wide")
+
+st.title("📊 Smart Well Allocation Manager")
+st.markdown("### Système d'optimisation et d'allocation de la production - Champ d'Ain Tsila")
+st.write("---")
+
+# --- Génération de la liste des puits (G01-G44 et GT01-GT09) ---
+wells_g = [f"G{i:02d}" for i in range(1, 45)]
+wells_gt = [f"GT{i:02d}" for i in range(1, 10)]
+all_wells = wells_g + wells_gt
+
+# --- SECTION 1: Objectifs de la Station de Surface (Plant Targets) ---
+st.subheader("📍 Objectifs de la Station de Surface")
+col_g, col_c, col_w = st.columns(3)
+with col_g:
+    t_gas = st.number_input("Target Gaz Total (m³/j)", value=1000000)
+with col_c:
+    t_cond = st.number_input("Target Condensat Total (m³/j)", value=250)
+with col_w:
+    t_water = st.number_input("Target Eau Total (m³/j)", value=50)
+
+st.write("---")
+
+# --- SECTION 2: Configuration des Puits ---
+st.subheader("🛢️ Configuration des Puits")
+st.info("Changez le statut du puits en 'OPEN' pour saisir les paramètres physiques.")
+
+open_wells_data = []
+
+# Affichage des puits sous forme de grille adaptative (4 colonnes)
+well_cols = st.columns(4)
+
+for idx, well in enumerate(all_wells):
+    with well_cols[idx % 4]:
+        with st.container():
+            st.markdown(f"**Puits: {well}**")
+            status = st.selectbox(f"Statut", ["CLOSED", "OPEN"], key=f"status_{well}")
+            
+            # Logique d'affichage dynamique des paramètres physiques
+            if status == "OPEN":
+                depth = st.number_input(f"Profondeur (m)", min_value=0.0, value=3200.0, key=f"depth_{well}")
+                wht = st.number_input(f"WHT (°C)", min_value=0.0, value=65.0, key=f"wht_{well}")
+                whp = st.number_input(f"WHP (psi)", min_value=0.0, value=1200.0, key=f"whp_{well}")
+                choke = st.number_input(f"Choke (64th)", min_value=0.0, value=32.0, key=f"choke_{well}")
+                flp = st.number_input(f"FLP (psi)", min_value=0.0, value=300.0, key=f"flp_{well}")
+                bhp = st.number_input(f"BHP (psi)", min_value=0.0, value=2800.0, key=f"bhp_{well}")
+                bht = st.number_input(f"BHT (°C)", min_value=0.0, value=110.0, key=f"bht_{well}")
+                
+                # Modèle de prédiction simplifié pour l'allocation immédiate
+                predicted_gas = whp * choke * 0.4
+                open_wells_data.append({"name": well, "pred_gas": predicted_gas, "status": "OPEN"})
+                st.caption(f"Prédit: {predicted_gas:,.1f} m³/j")
+            else:
+                open_wells_data.append({"name": well, "pred_gas": 0.0, "status": "CLOSED"})
+            st.markdown("---")
+
+st.write("---")
+
+# --- SECTION 3: Moteur d'Allocation et Rapport Final ---
+if st.button("🚀 EXECUTER LE MOTEUR D'ALLOCATION", type="primary", use_container_width=True):
+    st.subheader("📋 Rapport Final d'Allocation")
+    
+    total_predicted_gas = sum(item['pred_gas'] for item in open_wells_data if item['status'] == 'OPEN')
+    
+    if total_predicted_gas > 0:
+        factor = t_gas / total_predicted_gas
+        
+        report_data = []
+        for item in open_wells_data:
+            if item['status'] == 'OPEN':
+                allocated = item['pred_gas'] * factor
+                percentage = (allocated / t_gas) * 100
+                report_data.append({
+                    "Nom du Puits": item['name'],
+                    "Statut": "🟢 OPEN",
+                    "Gaz Alloué (m³/j)": f"{allocated:,.2f}",
+                    "Contribution %": f"{percentage:.2f}%"
+                })
+            else:
+                report_data.append({
+                    "Nom du Puits": item['name'],
+                    "Statut": "🔴 CLOSED",
+                    "Gaz Alloué (m³/j)": "0.00",
+                    "Contribution %": "0.00%"
+                })
+        
+        # Affichage du rapport sous forme de tableau interactif propre
+        st.dataframe(report_data, use_container_width=True)
+    else:
+        st.error("⚠️ Aucun puits n'est ouvert ou les données saisies sont insuffisantes pour le calcul.")
